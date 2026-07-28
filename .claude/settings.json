@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python -X utf8 -c ' *)",
+      "Bash(python -c \"import sys;print\\(sys.version\\)\")",
+      "PowerShell(py -0p 2>&1)",
+      "PowerShell(python -m pip index versions torch 2>&1)",
+      "Bash(python -m pip download torch --no-deps -d \"C:/Users/Admin/AppData/Local/Temp/claude/c--Users-Admin-Desktop-datacrunch-equity-market-neutral/ef97f62b-1732-49b7-8be1-3aa7370ded88/scratchpad/torchtest\" --dry-run)",
+      "Bash(python -m pip install torch --quiet --progress-bar off)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(python -c \"import torch;print\\('torch',torch.__version__,'cuda',torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(crunch setup *)",
+      "Bash(python smoke_ic_loss.py)",
+      "Bash(crunch setup-notebook *)",
+      "Bash(crunch --help)",
+      "Bash(crunch download *)",
+      "Bash(grep -viE \"iB/s|^\\\\s*$\")",
+      "Bash(python -X utf8 -m src.data --build)",
+      "Bash(python -X utf8 -m src.survey)"
+    ]
+  }
+}

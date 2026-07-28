@@ -1,0 +1,30 @@
+# ---- Secrets: NEVER commit. This repo has a public GitHub remote. ----
+TOKENS.local.md
+**/.crunchdao/token
+*.token
+
+# ---- Competition data (718 MB, re-downloadable via `crunch download`) ----
+ws-*/data/
+ws-*/prediction/
+ws-*/resources/
+data/
+*.parquet
+cache/
+*.npy
+*.npz
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ---- Experiment outputs (keep reports/leaderboard.csv, drop the bulk) ----
+reports/preds/
+*.log
+
+# Workspaces: keep code (main.py, requirements.txt), drop the rest
+ws-*/prediction/
+ws-*/resources/
+ws-*/notebook.ipynb

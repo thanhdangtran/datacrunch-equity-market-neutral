@@ -1,0 +1,164 @@
+{
+  "universe": {
+    "stocks_min": 1698,
+    "stocks_max": 2624,
+    "stocks_mean": 2096.384122919334,
+    "stocks_first50_mean": 2533.3,
+    "stocks_last50_mean": 1900.06,
+    "zero_frac_overall": 0.880540959777151,
+    "zero_frac_first50": 0.9019715312642069,
+    "zero_frac_last50": 0.8697952188054265,
+    "target_std_first50": 0.27220475673675537,
+    "target_std_last50": 0.3139598071575165,
+    "ic_noise_std_expected": 0.021922287810936414
+  },
+  "feature_ic": {
+    "best_abs_mean_ic": 0.023219311609864235,
+    "n_features_absic_gt_0.01": 17,
+    "n_features_abs_t_gt_3": 268,
+    "top_negative": [
+      {
+        "feature": "Feature_43",
+        "mean_ic": -0.023219311609864235,
+        "t": -31.539544674691655
+      },
+      {
+        "feature": "Feature_1",
+        "mean_ic": -0.023215297609567642,
+        "t": -31.44420862359428
+      },
+      {
+        "feature": "Feature_44",
+        "mean_ic": -0.02321467734873295,
+        "t": -31.375698103942142
+      },
+      {
+        "feature": "Feature_2",
+        "mean_ic": -0.02315378189086914,
+        "t": -31.40443165625376
+      },
+      {
+        "feature": "Feature_3",
+        "mean_ic": -0.022871121764183044,
+        "t": -31.13491388766721
+      },
+      {
+        "feature": "Feature_45",
+        "mean_ic": -0.022828157991170883,
+        "t": -31.159682081507647
+      },
+      {
+        "feature": "Feature_46",
+        "mean_ic": -0.02261923812329769,
+        "t": -30.903412441412424
+      },
+      {
+        "feature": "Feature_4",
+        "mean_ic": -0.022516699507832527,
+        "t": -30.56688282981614
+      },
+      {
+        "feature": "Feature_47",
+        "mean_ic": -0.022121701389551163,
+        "t": -30.720853745205517
+      },
+      {
+        "feature": "Feature_5",
+        "mean_ic": -0.02199789136648178,
+        "t": -30.77383447359374
+      }
+    ],
+    "top_positive": [
+      {
+        "feature": "Feature_83",
+        "mean_ic": 0.016751252114772797,
+        "t": 19.74171088797916
+      },
+      {
+        "feature": "Feature_99",
+        "mean_ic": 0.010847346857190132,
+        "t": 15.859456677918804
+      },
+      {
+        "feature": "Feature_1090",
+        "mean_ic": 0.009252384305000305,
+        "t": 10.483237817241138
+      },
+      {
+        "feature": "Feature_1087",
+        "mean_ic": 0.008353420533239841,
+        "t": 9.502628528048945
+      },
+      {
+        "feature": "Feature_68",
+        "mean_ic": 0.008216087706387043,
+        "t": 10.647636300332826
+      },
+      {
+        "feature": "Feature_1089",
+        "mean_ic": 0.007957778871059418,
+        "t": 8.938710781977377
+      },
+      {
+        "feature": "Feature_1088",
+        "mean_ic": 0.007838422432541847,
+        "t": 8.987833991932984
+      },
+      {
+        "feature": "Feature_64",
+        "mean_ic": 0.007363888900727034,
+        "t": 8.5612823776745
+      },
+      {
+        "feature": "Feature_1124",
+        "mean_ic": 0.007062443532049656,
+        "t": 8.67883564875638
+      },
+      {
+        "feature": "Feature_1096",
+        "mean_ic": 0.006022384390234947,
+        "t": 6.8190750062977905
+      }
+    ]
+  },
+  "stability": {
+    "corr_early_late_featureIC": 0.5908312092427805,
+    "corr_q1_q4_featureIC": 0.40572270630007384,
+    "top20_early_mean_ic_in_late": -0.013696633279323578,
+    "top20_early_mean_ic_in_early": -0.013644380494952202
+  },
+  "redundancy": {
+    "sample_rows": 84544,
+    "pc_for_90pct_var": 258,
+    "pc_for_95pct_var": 411,
+    "pc_for_99pct_var": 764,
+    "top1_pc_var": 0.10657302290201187,
+    "median_abs_offdiag_corr": 0.021346068009734154,
+    "frac_pairs_absr_gt_0.95": 0.0008794036402164454
+  },
+  "baselines": {
+    "single_best_feature": {
+      "feature": "Feature_43",
+      "sign": -1,
+      "mean_ic": 0.023219311279106772,
+      "ic_std": 0.020574043470735114,
+      "sharpe": 1.1285730640228466,
+      "hit_rate": 0.8655569782330346,
+      "mean_ic_last104": 0.0223016761941398
+    },
+    "top20_signed_mean": {
+      "mean_ic": 0.023823409008620067,
+      "ic_std": 0.02047615075811046,
+      "sharpe": 1.163471068857206,
+      "hit_rate": 0.8655569782330346,
+      "mean_ic_last104": 0.021051815045589523
+    },
+    "top100_signed_mean": {
+      "mean_ic": 0.025113679350495344,
+      "ic_std": 0.021057391802489264,
+      "sharpe": 1.1926301028186488,
+      "hit_rate": 0.8873239436619719,
+      "mean_ic_last104": 0.024201964212680744
+    }
+  }
+}
