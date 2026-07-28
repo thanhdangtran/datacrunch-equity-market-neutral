@@ -27,12 +27,30 @@ BEAT = {"survey_baseline": {"mean_ic": 0.0251, "sharpe": 1.19},
         "model_a_ridge": {"mean_ic": 0.0329, "sharpe": 1.25}}
 
 
-def evaluate(cache, folds, label: str, params: dict, n_estimators: int) -> dict:
+def rank_per_moon(pred: np.ndarray, moon: np.ndarray) -> np.ndarray:
+    """Map predictions to uniform ranks within each moon.
+
+    Monotone but not affine, so unlike centring it *does* change Pearson: it caps
+    how much a handful of extreme predictions can drive the score.
+    """
+    out = np.empty_like(pred, dtype=np.float32)
+    for m in np.unique(moon):
+        mask = moon == m
+        block = pred[mask]
+        order = np.argsort(np.argsort(block))
+        out[mask] = ((order + 0.5) / len(block) - 0.5) * 2.0
+    return out
+
+
+def evaluate(cache, folds, label: str, params: dict, n_estimators: int,
+             rank_pred: bool = False) -> dict:
     all_moons, all_ics, per_fold = [], [], {}
     for f in folds:
         t0 = time.time()
         booster = fit(cache, f.train, STRIDE, params, n_estimators)
         pred, target, moon = predict(cache, f.val, booster)
+        if rank_pred:
+            pred = rank_per_moon(pred, moon)
         m, ic = per_moon_ic(pred, target, moon)
         per_fold[f.name] = float(ic.mean())
         all_moons.append(m)
@@ -52,6 +70,8 @@ def main() -> None:
     ap.add_argument("--num-leaves", type=int, default=BASE_PARAMS["num_leaves"])
     ap.add_argument("--lambda-l2", type=float, default=BASE_PARAMS["lambda_l2"])
     ap.add_argument("--n-estimators", type=int, default=N_ESTIMATORS)
+    ap.add_argument("--rank-pred", action="store_true",
+                    help="rank-transform predictions within each moon before scoring")
     ap.add_argument("--conclusion", default="(chưa ghi)")
     args = ap.parse_args()
 
@@ -66,8 +86,9 @@ def main() -> None:
           f"num_leaves={args.num_leaves}, lambda_l2={args.lambda_l2}")
     out = {"params": params, "stride": STRIDE, "n_estimators": args.n_estimators,
            "beat": BEAT,
-           "walk_forward": evaluate(cache, wf, "wf", params, args.n_estimators),
-           "gap311": evaluate(cache, gf, "gap", params, args.n_estimators)}
+           "rank_pred": args.rank_pred,
+           "walk_forward": evaluate(cache, wf, "wf", params, args.n_estimators, args.rank_pred),
+           "gap311": evaluate(cache, gf, "gap", params, args.n_estimators, args.rank_pred)}
 
     (REPO / "reports").mkdir(exist_ok=True)
     (REPO / "reports" / f"{args.exp}.json").write_text(json.dumps(out, indent=2))
@@ -75,7 +96,8 @@ def main() -> None:
         args.exp,
         config={"model": "lgbm", "stride": STRIDE, "n_estimators": args.n_estimators,
                 "num_leaves": args.num_leaves, "lambda_l2": args.lambda_l2,
-                "max_bin": params["max_bin"], "feature_fraction": params["feature_fraction"]},
+                "max_bin": params["max_bin"], "feature_fraction": params["feature_fraction"],
+                "rank_pred": args.rank_pred},
         results={"walk_forward": out["walk_forward"], "gap311": out["gap311"]},
         conclusion=args.conclusion,
     )

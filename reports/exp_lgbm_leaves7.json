@@ -1,0 +1,64 @@
+{
+  "params": {
+    "objective": "regression",
+    "max_bin": 7,
+    "num_leaves": 7,
+    "max_depth": 5,
+    "learning_rate": 0.02,
+    "feature_fraction": 0.15,
+    "bagging_fraction": 1.0,
+    "min_child_samples": 500,
+    "lambda_l2": 50.0,
+    "verbose": -1,
+    "num_threads": 0,
+    "deterministic": true,
+    "force_col_wise": true,
+    "seed": 42,
+    "feature_fraction_seed": 42
+  },
+  "stride": 4,
+  "n_estimators": 800,
+  "beat": {
+    "survey_baseline": {
+      "mean_ic": 0.0251,
+      "sharpe": 1.19
+    },
+    "model_a_ridge": {
+      "mean_ic": 0.0329,
+      "sharpe": 1.25
+    }
+  },
+  "walk_forward": {
+    "n_moons": 156,
+    "mean_ic": 0.03999688214117546,
+    "ic_std": 0.04005650526504607,
+    "sharpe": 0.9985115245707009,
+    "hit_rate": 0.8397435897435898,
+    "worst_ic": -0.07862672724509402,
+    "best_ic": 0.12405042293936293,
+    "mean_ic_last104": 0.03749082674649811,
+    "moon_first": 626,
+    "moon_last": 781,
+    "by_fold": {
+      "wf4": 0.045008992930530144,
+      "wf5": 0.04473207508605189,
+      "wf6": 0.03024957840694435
+    }
+  },
+  "gap311": {
+    "n_moons": 104,
+    "mean_ic": 0.026047387077409074,
+    "ic_std": 0.03327831924958257,
+    "sharpe": 0.7827134201717775,
+    "hit_rate": 0.7596153846153846,
+    "worst_ic": -0.05899923507785665,
+    "best_ic": 0.10789737624138707,
+    "mean_ic_last104": 0.026047387077409074,
+    "moon_first": 678,
+    "moon_last": 781,
+    "by_fold": {
+      "gap311_2": 0.03196864657688207,
+      "gap311_3": 0.020126127577936078
+    }
+  }
+}
