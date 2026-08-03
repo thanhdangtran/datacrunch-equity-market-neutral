@@ -1,87 +1,45 @@
-#%pip install crunch-cli --upgrade --quiet --progress-bar off
-#!crunch setup-notebook datacrunch-2 YOUR_TOKEN_HERE --size small
+"""Model A -- ridge on all 1150 features, fitted from streamed second moments.
 
+Chosen by src/run_ridge.py: alpha 1e6 scored mean_ic 0.0329 / Sharpe 1.25 over six
+purged walk-forward folds (6/6 positive), and 0.0304 / 1.31 across the 311-moon gap
+folds that stand in for the local->live distance. The survey baseline it has to beat
+was 0.0251 / 1.19.
 
-import os
-import warnings
-#warnings.filterwarnings("ignore", message="X does not have valid feature names")
+Two deliberate choices, both from PLAN.md:
+
+  * L2 on the *raw* target, never a ranked one. Pearson is maximised by E[y|x] and
+    L2 estimates exactly that. 88% of targets are exactly 0, so rank-transforming
+    the target spreads that tied mass across the whole range according to row order
+    -- measured correlation between assigned rank and row position was +0.72.
+
+  * The design matrix is never materialised. X'X is 1150x1150 no matter how many
+    rows we train on, so this fits in a fixed ~11 MB regardless of how much data
+    the cloud hands us, which local RAM could not have held anyway.
+"""
+from __future__ import annotations
+
 import json
-import joblib  # == 1.3.2
-import numpy as np  # == 1.24.3
-import pandas as pd  # == 2.1.0
+import os
 
-import sklearn  # == 1.1.3
-from sklearn.linear_model import Ridge
-from sklearn.decomposition import PCA
-import lightgbm as lgb  # == 4.3.0
+import numpy as np
+import pandas as pd
 
+# Ridge strength, expressed per training row so the effective shrinkage stays put
+# when the cloud trains on more moons than we have locally. Tuned as alpha = 1e6
+# at n = 1_637_276 rows on the 0..6 feature scale.
+ALPHA_PER_ROW = 1e6 / 1_637_276
 
-import crunch
-#crunch_tools = crunch.load_notebook()
-#X_train, y_train, X_test = crunch_tools.load_data()
-
-
-# @crunch/keep:on
-def get_config() -> dict:
-    SEED = 42
-    return {
-        "SEED": SEED,
-        # blend
-        "BLEND_WEIGHT_LINEAR": 0.5,      # rank weight on linear; GBM gets the rest
-        # latent factors (the "C" upgrade)
-        "N_PCA": 40,                     # number of principal components to add as features
-        # per-moon processing
-        "RANK_TARGET_PER_MOON": True,    # train on per-moon gauss-ranked target
-        # neutralization (per moon, on the blended score)
-        "NEUTRALIZATION_ALPHA": 0.5,     # 0=off, 1=full; 0.3-0.5 is the Numerai sweet spot
-        "NEUTRALIZATION_RIDGE": 1e-2,
-        # linear
-        "RIDGE_ALPHA": 100.0,
-        # conservative LightGBM
-        "LGB_PARAMS": dict(
-            objective="regression",
-            n_estimators=2000, learning_rate=0.01,
-            num_leaves=31, max_depth=5,
-            feature_fraction=0.10, bagging_fraction=0.70, bagging_freq=1,
-            min_child_samples=200, lambda_l2=10.0, max_bin=15,
-            seed=SEED, bagging_seed=SEED, feature_fraction_seed=SEED,
-            deterministic=True, force_col_wise=True, n_jobs=-1, verbose=-1,
-        ),
-    }
-# @crunch/keep:off
+# Features arrive as {0, .17, .33, .5, .67, .83, 1.0}; the tuning above was done on
+# the integer codes {0..6}, and ridge is not scale invariant, so match that scale.
+FEATURE_SCALE = 6.0
 
 
 def get_model_path(model_directory_path: str) -> str:
-    return os.path.join(model_directory_path, "model.joblib")
+    return os.path.join(model_directory_path, "model.npz")
+
 
 def get_feature_columns(X: pd.DataFrame) -> list:
     return [c for c in X.columns if c.startswith("Feature_")]
-
-def gauss_rank(a: np.ndarray) -> np.ndarray:
-    """Map values to a centered Gaussian-ish rank in (-1, 1). Outlier-robust, helps Pearson."""
-    order = np.argsort(np.argsort(a))
-    u = (order + 0.5) / len(a)            # uniform ranks in (0,1)
-    return (u - 0.5) * 2.0                 # to (-1, 1)
-
-def per_moon_gauss_rank_target(df, col, moon_col="moon"):
-    out = np.empty(len(df), dtype=np.float32)
-    for _, idx in df.groupby(moon_col).indices.items():
-        out[idx] = gauss_rank(df[col].to_numpy()[idx])
-    return out
-
-def neutralize_per_moon(scores, feats, moons, alpha, ridge_lambda):
-    """Residualize scores against features within each moon (partial, proportion=alpha)."""
-    out = scores.astype(np.float32).copy()
-    for m in np.unique(moons):
-        mask = moons == m
-        F = feats[mask]
-        s = scores[mask]
-        # ridge-stabilized projection of s onto F
-        FtF = F.T @ F + ridge_lambda * np.eye(F.shape[1], dtype=F.dtype)
-        beta = np.linalg.solve(FtF, F.T @ s)
-        proj = F @ beta
-        out[mask] = s - alpha * proj
-    return out
 
 
 def train(
@@ -91,42 +49,39 @@ def train(
     # loop_moon: int = None,
     # embargo: int = None,
 ) -> None:
-    cfg = get_config()
-    np.random.seed(cfg["SEED"])
+    features = get_feature_columns(X_train)
+    d = len(features)
 
-    feats = get_feature_columns(X_train)
-    Xf = X_train[feats].to_numpy(dtype=np.float32)
+    XtX = np.zeros((d, d), dtype=np.float64)
+    Xty = np.zeros(d, dtype=np.float64)
+    xsum = np.zeros(d, dtype=np.float64)
+    ysum = 0.0
+    n = 0
 
-    # --- Latent factors (C): fit PCA, append components as extra features ---
-    pca = PCA(n_components=cfg["N_PCA"], random_state=cfg["SEED"])
-    Xpca = pca.fit_transform(Xf).astype(np.float32)
-    X_aug = np.hstack([Xf, Xpca])
+    target = y_train["target"].to_numpy(dtype=np.float32)
+    # Column positions, so each moon can be sliced without ever building the full
+    # (n_rows x 1150) matrix -- that is ~7 GB and the point of this whole approach.
+    col_pos = [X_train.columns.get_loc(c) for c in features]
 
-    # --- Target: per-moon gauss rank aligns with the rank-correlation objective ---
-    if cfg["RANK_TARGET_PER_MOON"]:
-        y = per_moon_gauss_rank_target(y_train.assign(moon=X_train["moon"].values),
-                                       "target", "moon")
-    else:
-        y = y_train["target"].to_numpy(dtype=np.float32)
+    # One moon at a time: bounded memory, and it keeps cross-sections intact.
+    for _, idx in X_train.groupby("moon").indices.items():
+        Xm = X_train.iloc[idx, col_pos].to_numpy(dtype=np.float32) * FEATURE_SCALE
+        ym = target[idx]
+        XtX += (Xm.T @ Xm).astype(np.float64)
+        Xty += (Xm.T @ ym).astype(np.float64)
+        xsum += Xm.sum(axis=0, dtype=np.float64)
+        ysum += float(ym.sum(dtype=np.float64))
+        n += len(Xm)
 
-    # --- Two diverse base learners ---
-    linear = Ridge(alpha=cfg["RIDGE_ALPHA"], random_state=cfg["SEED"])
-    linear.fit(X_aug, y)
+    # Ridge on centred data; the intercept cannot affect a correlation.
+    xbar, ybar = xsum / n, ysum / n
+    A = XtX - n * np.outer(xbar, xbar)
+    b = Xty - n * xbar * ybar
+    A.flat[:: d + 1] += ALPHA_PER_ROW * n
+    beta = np.linalg.solve(A, b).astype(np.float32)
 
-    gbm = lgb.LGBMRegressor(**cfg["LGB_PARAMS"])
-    gbm.fit(X_aug, y)
-
-    joblib.dump({
-        "pca": pca,
-        "linear": linear,
-        "gbm": gbm,
-        "feats": feats,
-        "config": {
-            "BLEND_WEIGHT_LINEAR": cfg["BLEND_WEIGHT_LINEAR"],
-            "NEUTRALIZATION_ALPHA": cfg["NEUTRALIZATION_ALPHA"],
-            "NEUTRALIZATION_RIDGE": cfg["NEUTRALIZATION_RIDGE"],
-        },
-    }, get_model_path(model_directory_path))
+    np.savez(get_model_path(model_directory_path), beta=beta,
+             features=np.array(features), n_train=n)
 
 
 def infer(
@@ -135,95 +90,29 @@ def infer(
     # loop_moon: int = None,
     # embargo: int = None,
 ) -> pd.DataFrame:
-    art = joblib.load(get_model_path(model_directory_path))
-    pca, linear, gbm = art["pca"], art["linear"], art["gbm"]
-    feats, cfg = art["feats"], art["config"]
+    art = np.load(get_model_path(model_directory_path), allow_pickle=False)
+    beta = art["beta"]
+    features = [str(f) for f in art["features"]]
 
-    Xf = X_test[feats].to_numpy(dtype=np.float32)
-    X_aug = np.hstack([Xf, pca.transform(Xf).astype(np.float32)])
-
-    moons = X_test["moon"].to_numpy()
-
-    # base predictions -> per-moon ranks -> weighted blend
-    def per_moon_rank(p):
-        out = np.empty_like(p, dtype=np.float32)
-        for m in np.unique(moons):
-            mask = moons == m
-            out[mask] = gauss_rank(p[mask])
-        return out
-
-    p_lin = per_moon_rank(linear.predict(X_aug))
-    p_gbm = per_moon_rank(gbm.predict(X_aug))
-    w = cfg["BLEND_WEIGHT_LINEAR"]
-    blended = w * p_lin + (1.0 - w) * p_gbm
-
-    # per-moon feature neutralization for OOS stability
-    blended = neutralize_per_moon(
-        blended, Xf, moons,
-        alpha=cfg["NEUTRALIZATION_ALPHA"],
-        ridge_lambda=cfg["NEUTRALIZATION_RIDGE"],
-    )
-
-    # final per-moon gauss rank + clip to [-1, 1] (never constant -> avoids score 0)
-    final = per_moon_rank(blended)
+    X = X_test[features].to_numpy(dtype=np.float32) * FEATURE_SCALE
+    raw = X @ beta
 
     out = X_test[["id", "moon"]].copy()
-    out["prediction"] = np.clip(final, -1.0, 1.0)
+    pred = np.zeros(len(raw), dtype=np.float32)
+
+    # Centre each moon, then scale to peak magnitude 1. Both steps are affine within
+    # a moon, so the Pearson score is untouched, and together they guarantee the
+    # [-1, 1] range the platform requires without the clipping that would bend the
+    # ranking. Centring also stops the whole moon sitting on one side of zero.
+    for _, idx in out.groupby("moon").indices.items():
+        block = raw[idx] - raw[idx].mean()
+        peak = np.abs(block).max()
+        if peak > 0:
+            pred[idx] = block / peak
+        else:
+            # Degenerate moon: a constant column scores 0, so emit a tiny spread
+            # rather than a flat vector.
+            pred[idx] = np.linspace(-1e-6, 1e-6, len(idx), dtype=np.float32)
+
+    out["prediction"] = pred
     return out
-
-
-#crunch_tools.test(
-#    force_first_train=True,
-#    train_frequency=0,
-#)
-
-
-#prediction = pd.read_parquet("prediction/prediction.parquet")
-#y_test = pd.read_parquet(
-#    "data/y.reduced.parquet",
-#    filters=[("moon", "in", prediction["moon"].unique().tolist())],
-#)
-#merged = y_test.merge(prediction, on=["moon", "id"])
-
-#corr_by_moon = (merged.groupby("moon")
-#    .apply(lambda g: g["prediction"].corr(g["target"], method="pearson"), include_groups=False)
-#    .fillna(0.0))
-
-#corr_mean = float(corr_by_moon.mean())
-#corr_std  = float(corr_by_moon.std())
-#sharpe    = corr_mean / corr_std if corr_std > 0 else 0.0
-
-# EDA snapshot
-#t = y_train["target"].to_numpy()
-#hist, _ = np.histogram(t, bins=15)
-#cfg = get_config()
-
-#results = {
-#    "metric": "pearson",
-#    "corr_mean": corr_mean,
-#    "corr_std": corr_std,
-#    "sharpe": float(sharpe),
-#    "corr_by_moon": [float(x) for x in corr_by_moon.tolist()],
-#    "moons_scored": [int(x) for x in corr_by_moon.index.tolist()],
-#    "eda": {
-#        "n_moons": int(X_train["moon"].nunique()),
-#        "n_rows": int(len(X_train)),
-#        "n_feats": int(len(get_feature_columns(X_train))),
-#        "avg_stocks": int(round(len(X_train) / max(1, X_train["moon"].nunique()))),
-#        "pct_zero": float((t == 0).mean() * 100),
-#        "target_hist": [int(x) for x in hist.tolist()],
-#    },
-#    "config": {k: (v if not isinstance(v, dict) else "…") for k, v in cfg.items() if k != "LGB_PARAMS"},
-#}
-
-#with open("results.json", "w") as f:
-#    json.dump(results, f, indent=2)
-
-#print(f"Pearson mean: {corr_mean:+.4f}  | std {corr_std:.4f} | Sharpe {sharpe:.2f}")
-#print("Wrote results.json — open dashboard.html to view the full report.")
-
-
-#crunch_tools.submit(
-#    message="rank-blend + PCA latent factors",
-#    include_installed_packages_version=True,
-#)
